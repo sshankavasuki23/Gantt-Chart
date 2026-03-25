@@ -110,6 +110,7 @@ def draw_scientific_gantt(data, start_dt, num_months):
         y = len(data) - 1 - idx
         f_weight, f_style, f_size = ('bold' if row.get('Bold') else 'normal'), ('italic' if row.get('Italics') else 'normal'), (row.get('Font size') or 10)
         h_align = str(row.get('Alignment') or 'Center').lower()
+        safe_align = h_align if h_align in ['left', 'center', 'right'] else 'center'
         row_color = COLOR_PALETTE.get(row.get('Color') or 'Orange', '#ffa500')
         row_type = str(row.get('Row Type'))
 
@@ -121,7 +122,8 @@ def draw_scientific_gantt(data, start_dt, num_months):
             ax.text((ACT_W + STAFF_W + num_months) * 0.5, y + 0.5, str(row.get('Activity description') or "").upper(), ha='center', va='center', fontweight=f_weight, fontstyle=f_style, fontsize=f_size)
         else:
             ax.add_patch(patches.Rectangle((0, y), ACT_W, 1, facecolor='white', edgecolor='black', lw=1))
-            ax.text(ACT_W * 0.05 if h_align == 'left' else ACT_W * 0.5, y + 0.5, str(row.get('Activity description') or ""), ha=h_align, va='center', fontweight=f_weight, fontstyle=f_style, fontsize=f_size)
+            x_pos = ACT_W * 0.05 if safe_align == 'left' else (ACT_W * 0.95 if safe_align == 'right' else ACT_W * 0.5)
+            ax.text(x_pos, y + 0.5, str(row.get('Activity description') or ""), ha=safe_align, va='center', fontweight=f_weight, fontstyle=f_style, fontsize=f_size)
             ax.add_patch(patches.Rectangle((ACT_W, y), STAFF_W, 1, facecolor='white', edgecolor='black', lw=1))
             ax.text(ACT_W + STAFF_W/2, y + 0.5, str(row.get('Person incharge') or ""), ha='center', va='center', fontsize=f_size)
             for i in range(num_months):
@@ -150,9 +152,11 @@ def draw_scientific_gantt(data, start_dt, num_months):
                 span = j - i
                 y_bottom = len(data) - j
                 h_align = str(row.get('Alignment') or 'Center').lower()
+                safe_align = h_align if h_align in ['left', 'center', 'right'] else 'center'
+                x_pos = ACT_W * 0.05 if safe_align == 'left' else (ACT_W * 0.95 if safe_align == 'right' else ACT_W * 0.5)
                 f_weight, f_style, f_size = ('bold' if row.get('Bold') else 'normal'), ('italic' if row.get('Italics') else 'normal'), (row.get('Font size') or 10)
                 ax.add_patch(patches.Rectangle((0, y_bottom), ACT_W, span, facecolor='white', edgecolor='black', lw=1, zorder=7))
-                ax.text(ACT_W * 0.05 if h_align == 'left' else ACT_W * 0.5, y_bottom + span/2, group_val, ha=h_align, va='center', fontweight=f_weight, fontstyle=f_style, fontsize=f_size, zorder=8)
+                ax.text(x_pos, y_bottom + span/2, group_val, ha=safe_align, va='center', fontweight=f_weight, fontstyle=f_style, fontsize=f_size, zorder=8)
             i = j
         else:
             i += 1
