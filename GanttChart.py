@@ -24,7 +24,6 @@ st.markdown("""
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         text-transform: uppercase; white-space: nowrap;
     }
-    /* Large Inputs and High Contrast */
     .stDateInput label { font-size: 20px !important; font-weight: 700 !important; }
     .timeline-container { display: flex; flex-direction: column; align-items: center; justify-content: center; }
     .timeline-label { font-size: 20px; font-weight: 700; }
@@ -58,21 +57,26 @@ plt.rcParams['font.family'] = selected_font
 
 # --- 3. Inputs to Gantt Chart Generator ---
 st.markdown("<div class='section-header'>Inputs to Gantt Chart Generator</div>", unsafe_allow_html=True)
-COLOR_PALETTE = {"Rose": "#ef476f", "Mustard": "#ffd166", "Emerald": "#06d6a0", "Blue": "#118ab2", "Midnight": "#073b4c", "Orange": "#ffa500", "Yellow": "#ffff00", "Grey Header": "#d3d3d3"}
+COLOR_PALETTE = {
+    "Rose": "#ef476f", "Mustard": "#ffd166", "Emerald": "#06d6a0", 
+    "Blue": "#118ab2", "Midnight": "#073b4c", "Orange": "#ffa500", 
+    "Yellow": "#ffff00", "Grey Header": "#d3d3d3", "None": "none"
+}
 
 if 'data' not in st.session_state:
     st.session_state.data = pd.DataFrame([
-        {"Row Type": "Header", "Activity description": "Research Plan Overview", "Person incharge": "", "Label": "", "Start month": 1, "End month": total_months, "Color": "Grey Header", "Alignment": "Center", "Bold": True, "Italics": False, "Font size": 11},
-        {"Row Type": "Task", "Activity description": "Pub 1: Review article", "Person incharge": "Sathya", "Label": "PUB1", "Start month": 1, "End month": 5, "Color": "Orange", "Alignment": "Left", "Bold": False, "Italics": True, "Font size": 10},
+        {"Row Type": "Header", "Group": "", "Activity description": "Research Plan Overview", "Person incharge": "", "Label": "", "Start month": 1, "End month": total_months, "Color": "Grey Header", "Alignment": "Center", "Bold": True, "Italics": False, "Font size": 11},
+        {"Row Type": "Task", "Group": "Pub 4 - Thermal model", "Activity description": "", "Person incharge": "Sathya", "Label": "PUB4", "Start month": 37, "End month": 41, "Color": "Orange", "Alignment": "Left", "Bold": False, "Italics": True, "Font size": 10},
+        {"Row Type": "Task", "Group": "Pub 4 - Thermal model", "Activity description": "", "Person incharge": "MSc 1 Aryeshah", "Label": "", "Start month": 6, "End month": 16, "Color": "Yellow", "Alignment": "Left", "Bold": False, "Italics": True, "Font size": 10},
     ])
 
 df = st.data_editor(st.session_state.data, num_rows="dynamic", width="stretch", column_config={
-    "Row Type": st.column_config.SelectboxColumn("Row Type", options=["Task", "Header"]),
+    "Row Type": st.column_config.SelectboxColumn("Row Type", options=["Task", "Header", "Subheader"]),
     "Color": st.column_config.SelectboxColumn("Color", options=list(COLOR_PALETTE.keys())),
     "Alignment": st.column_config.SelectboxColumn("Alignment", options=["Left", "Center", "Right"]),
 })
 
-# --- 4. Drawing Engine (Hardened) ---
+# --- 4. Drawing Engine ---
 def draw_scientific_gantt(data, start_dt, num_months):
     ACT_W, STAFF_W = 7, 2
     ROW_H = 0.85
@@ -105,31 +109,60 @@ def draw_scientific_gantt(data, start_dt, num_months):
         ax.add_patch(patches.Rectangle((x, len(data)), 1, M_H, facecolor='white', edgecolor='black', lw=1))
         ax.text(x + 0.5, len(data) + (M_H/2), month_names[i], ha='center', va='center', fontsize=9, rotation=90)
 
-    # Body
+    # Merged Activity Column Logic
+    i = 0
+    while i < len(data):
+        row = data.iloc[i]
+        group_val = str(row.get('Group') or "")
+        y_top = len(data) - i
+        
+        if group_val == "":
+            # Standard single-row Activity Cell
+            ax.add_patch(patches.Rectangle((0, y_top - 1), ACT_W, 1, facecolor='white', edgecolor='black', lw=1))
+            ax.text(ACT_W * 0.5, y_top - 0.5, str(row.get('Activity description') or ""), ha='center', va='center', fontsize=row.get('Font size') or 10)
+            i += 1
+        else:
+            # Find consecutive rows with the same group name
+            j = i
+            while j < len(data) and str(data.iloc[j].get('Group') or "") == group_val:
+                j += 1
+            num_rows = j - i
+            ax.add_patch(patches.Rectangle((0, len(data) - j), ACT_W, num_rows, facecolor='white', edgecolor='black', lw=1))
+            ax.text(ACT_W * 0.5, (y_top + (len(data) - j)) / 2, group_val, ha='center', va='center', fontstyle='italic', fontsize=row.get('Font size') or 11)
+            i = j
+
+    # Body Rows Logic (Staff and Grid)
     for idx, row in data.iterrows():
         y = len(data) - 1 - idx
         f_weight, f_style, f_size = ('bold' if row.get('Bold') else 'normal'), ('italic' if row.get('Italics') else 'normal'), (row.get('Font size') or 10)
         h_align = str(row.get('Alignment') or 'Center').lower()
         row_color = COLOR_PALETTE.get(row.get('Color') or 'Orange', '#ffa500')
+        row_type = str(row.get('Row Type'))
 
-        if str(row.get('Row Type')) == 'Header':
-            ax.add_patch(patches.Rectangle((0, y), ACT_W + STAFF_W + num_months, 1, facecolor=row_color, edgecolor='black', lw=1))
+        if row_type in ['Header', 'Subheader']:
+            bg_color = row_color if row_type == 'Header' else '#d3d3d3'
+            alpha_val = 1.0 if row_type == 'Header' else 0.4
+            ax.add_patch(patches.Rectangle((0, y), ACT_W + STAFF_W + num_months, 1, facecolor=bg_color, edgecolor='black', lw=1, alpha=alpha_val))
             ax.text((ACT_W + STAFF_W + num_months) * 0.5, y + 0.5, str(row.get('Activity description') or "").upper(), ha='center', va='center', fontweight=f_weight, fontstyle=f_style, fontsize=f_size)
         else:
-            ax.add_patch(patches.Rectangle((0, y), ACT_W, 1, facecolor='white', edgecolor='black', lw=1))
-            ax.text(ACT_W * 0.05 if h_align == 'left' else ACT_W * 0.5, y + 0.5, str(row.get('Activity description') or ""), ha=h_align, va='center', fontweight=f_weight, fontstyle=f_style, fontsize=f_size)
+            # Staff Column
             ax.add_patch(patches.Rectangle((ACT_W, y), STAFF_W, 1, facecolor='white', edgecolor='black', lw=1))
             ax.text(ACT_W + STAFF_W/2, y + 0.5, str(row.get('Person incharge') or ""), ha='center', va='center', fontsize=f_size)
+            
+            # Month Grid
             for i in range(num_months):
                 ax.add_patch(patches.Rectangle((ACT_W + STAFF_W + i, y), 1, 1, facecolor='none', edgecolor='#444444', lw=0.9))
-            try:
-                s, e = int(row.get('Start month') or 1), int(row.get('End month') or 1)
-                bx, bw = (ACT_W + STAFF_W + s - 1), (e - s + 1)
-                if bw > 0:
-                    ax.add_patch(patches.Rectangle((bx, y + 0.15), bw, 0.7, facecolor=row_color, edgecolor='black', lw=1.2, zorder=5))
-                    if row.get('Label'):
-                        ax.text(bx + bw/2, y + 0.5, str(row['Label']), ha='center', va='center', fontweight='bold', fontsize=f_size-1, zorder=6)
-            except: pass
+            
+            # Task Bar
+            if row_color != "none":
+                try:
+                    s, e = int(row.get('Start month') or 1), int(row.get('End month') or 1)
+                    bx, bw = (ACT_W + STAFF_W + s - 1), (e - s + 1)
+                    if bw > 0:
+                        ax.add_patch(patches.Rectangle((bx, y + 0.15), bw, 0.7, facecolor=row_color, edgecolor='black', lw=1.2, zorder=5))
+                        if row.get('Label'):
+                            ax.text(bx + bw/2, y + 0.5, str(row['Label']), ha='center', va='center', fontweight='bold', fontsize=f_size-1, zorder=6)
+                except: pass
 
     ax.add_patch(patches.Rectangle((0, 0), ACT_W + STAFF_W + num_months, len(data) + H_TOTAL, fill=False, edgecolor='black', lw=2.5, zorder=10))
     return fig
@@ -138,18 +171,15 @@ def draw_scientific_gantt(data, start_dt, num_months):
 st.divider()
 st.markdown("<div class='section-header'>Gantt Chart Preview</div>", unsafe_allow_html=True)
 final_fig = draw_scientific_gantt(df, start_date, total_months)
-
-# FIX: Set preview DPI to 80 to prevent memory spikes during cell editing
 st.pyplot(final_fig, dpi=80)
 
 st.markdown("<div class='section-header'>Export Options</div>", unsafe_allow_html=True)
 with st.container(border=True):
     e1, e2, e3 = st.columns(3)
-    # FIX: PNG DPI reduced to 600 to fit within the 1GB RAM server limit while maintaining high res
     for i, (fmt, lbl, dpi) in enumerate([("pdf", "PDF (Vector)", 300), ("svg", "SVG (Vector)", 300), ("png", "PNG (600 DPI)", 600)]):
         buf = io.BytesIO()
         final_fig.savefig(buf, format=fmt, bbox_inches='tight', dpi=dpi)
         [e1, e2, e3][i].download_button(lbl, buf.getvalue(), f"gantt.{fmt}")
-    plt.close(final_fig) # Explicitly clear memory
+    plt.close(final_fig)
 
 st.markdown("<br><p style='text-align: center; color: #444; font-weight: 800;'>Developed by Sathya</p>", unsafe_allow_html=True)
