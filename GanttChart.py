@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib
-# Force headless backend for Linux/Streamlit Cloud
+# Force headless backend to prevent server-side display errors
 matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -24,7 +24,6 @@ st.markdown("""
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         text-transform: uppercase; white-space: nowrap;
     }
-    /* Large Inputs and High Contrast */
     .stDateInput label { font-size: 20px !important; font-weight: 700 !important; }
     .timeline-container { display: flex; flex-direction: column; align-items: center; justify-content: center; }
     .timeline-label { font-size: 20px; font-weight: 700; }
@@ -51,9 +50,11 @@ with st.container(border=True):
 st.markdown("<div class='section-header'>Select Font Family</div>", unsafe_allow_html=True)
 @st.cache_data
 def get_system_fonts():
+    # Caching prevents reloading the entire font library on every table edit
     return sorted(list(set([f.name for f in fm.fontManager.ttflist])))
 
-selected_font = st.selectbox("Font selector:", get_system_fonts(), index=0, label_visibility="collapsed")
+fonts = get_system_fonts()
+selected_font = st.selectbox("Font selector:", fonts, index=0, label_visibility="collapsed")
 plt.rcParams['font.family'] = selected_font
 
 # --- 3. Inputs to Gantt Chart Generator ---
@@ -72,42 +73,45 @@ df = st.data_editor(st.session_state.data, num_rows="dynamic", width="stretch", 
     "Alignment": st.column_config.SelectboxColumn("Alignment", options=["Left", "Center", "Right"]),
 })
 
-# --- 4. Drawing Engine (Hardened) ---
+# --- 4. Drawing Engine ---
 def draw_scientific_gantt(data, start_dt, num_months):
     ACT_W, STAFF_W = 7, 2
     ROW_H = 0.85
     Y_H, N_H, M_H = 0.8, 0.7, 1.0 
     H_TOTAL = Y_H + N_H + M_H
     
-    fig, ax = plt.subplots(figsize=(24, (len(data) + H_TOTAL + 0.5) * ROW_H))
+    # Pre-calculate to avoid NameErrors
+    rows_count = len(data)
+    
+    fig, ax = plt.subplots(figsize=(24, (rows_count + H_TOTAL + 0.5) * ROW_H))
     ax.set_xlim(0, ACT_W + STAFF_W + num_months)
-    ax.set_ylim(-0.5, len(data) + H_TOTAL)
+    ax.set_ylim(-0.5, rows_count + H_TOTAL)
     ax.axis('off')
 
     year_map = [(start_dt + relativedelta(months=m)).year for m in range(num_months)]
     month_names = [(start_dt + relativedelta(months=m)).strftime('%b') for m in range(num_months)]
     
     # Headers
-    ax.add_patch(patches.Rectangle((0, len(data)), ACT_W + STAFF_W, H_TOTAL, facecolor='white', edgecolor='black', lw=1.5))
-    ax.text((ACT_W + STAFF_W)/2, len(data) + (H_TOTAL/2), "Activities", ha='center', va='center', fontweight='bold', fontsize=18)
+    ax.add_patch(patches.Rectangle((0, rows_count), ACT_W + STAFF_W, H_TOTAL, facecolor='white', edgecolor='black', lw=1.5))
+    ax.text((ACT_W + STAFF_W)/2, rows_count + (H_TOTAL/2), "Activities", ha='center', va='center', fontweight='bold', fontsize=18)
 
     curr_x = ACT_W + STAFF_W
     for yr in sorted(list(set(year_map))):
         span = year_map.count(yr)
-        ax.add_patch(patches.Rectangle((curr_x, len(data) + N_H + M_H), span, Y_H, facecolor='#f2f2f2', edgecolor='black', lw=1.5))
-        ax.text(curr_x + span/2, len(data) + N_H + M_H + (Y_H/2), str(yr), ha='center', va='center', fontweight='bold', fontsize=13)
+        ax.add_patch(patches.Rectangle((curr_x, rows_count + N_H + M_H), span, Y_H, facecolor='#f2f2f2', edgecolor='black', lw=1.5))
+        ax.text(curr_x + span/2, rows_count + N_H + M_H + (Y_H/2), str(yr), ha='center', va='center', fontweight='bold', fontsize=13)
         curr_x += span
 
     for i in range(num_months):
         x = ACT_W + STAFF_W + i
-        ax.add_patch(patches.Rectangle((x, len(data) + M_H), 1, N_H, facecolor='white', edgecolor='black', lw=1))
-        ax.text(x + 0.5, len(data) + M_H + (N_H/2), str(i + 1), ha='center', va='center', fontsize=10)
-        ax.add_patch(patches.Rectangle((x, len(data)), 1, M_H, facecolor='white', edgecolor='black', lw=1))
-        ax.text(x + 0.5, len(data) + (M_H/2), month_names[i], ha='center', va='center', fontsize=9, rotation=90)
+        ax.add_patch(patches.Rectangle((x, rows_count + M_H), 1, N_H, facecolor='white', edgecolor='black', lw=1))
+        ax.text(x + 0.5, rows_count + M_H + (N_H/2), str(i + 1), ha='center', va='center', fontsize=10)
+        ax.add_patch(patches.Rectangle((x, rows_count), 1, M_H, facecolor='white', edgecolor='black', lw=1))
+        ax.text(x + 0.5, rows_count + (M_H/2), month_names[i], ha='center', va='center', fontsize=9, rotation=90)
 
     # Body
     for idx, row in data.iterrows():
-        y = len(data) - 1 - idx
+        y = rows_count - 1 - idx
         f_weight, f_style, f_size = ('bold' if row.get('Bold') else 'normal'), ('italic' if row.get('Italics') else 'normal'), (row.get('Font size') or 10)
         h_align = str(row.get('Alignment') or 'Center').lower()
         row_color = COLOR_PALETTE.get(row.get('Color') or 'Orange', '#ffa500')
@@ -131,7 +135,7 @@ def draw_scientific_gantt(data, start_dt, num_months):
                         ax.text(bx + bw/2, y + 0.5, str(row['Label']), ha='center', va='center', fontweight='bold', fontsize=f_size-1, zorder=6)
             except: pass
 
-    ax.add_patch(patches.Rectangle((0, 0), ACT_W + STAFF_W + num_months, len(data) + H_TOTAL, fill=False, edgecolor='black', lw=2.5, zorder=10))
+    ax.add_patch(patches.Rectangle((0, 0), ACT_W + STAFF_W + num_months, rows_count + H_TOTAL, fill=False, edgecolor='black', lw=2.5, zorder=10))
     return fig
 
 # --- 5. Export ---
@@ -143,10 +147,13 @@ st.pyplot(final_fig)
 st.markdown("<div class='section-header'>Export Options</div>", unsafe_allow_html=True)
 with st.container(border=True):
     e1, e2, e3 = st.columns(3)
+    # The crash happens here during savefig at 1200 DPI. We must manage memory strictly.
     for i, (fmt, lbl, dpi) in enumerate([("pdf", "PDF (Vector)", 300), ("svg", "SVG (Vector)", 300), ("png", "PNG (1200 DPI)", 1200)]):
         buf = io.BytesIO()
         final_fig.savefig(buf, format=fmt, bbox_inches='tight', dpi=dpi)
         [e1, e2, e3][i].download_button(lbl, buf.getvalue(), f"gantt.{fmt}")
-    plt.close(final_fig) # Clear memory
+    
+    # CRITICAL: Close figure after savefig to free up the 1GB RAM server limit
+    plt.close(final_fig)
 
 st.markdown("<br><p style='text-align: center; color: #444; font-weight: 800;'>Developed by Sathya</p>", unsafe_allow_html=True)
